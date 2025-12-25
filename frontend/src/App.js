@@ -10,7 +10,7 @@ function App() {
   const [comment, setComment] = useState("");
 
   const getPlan = async () => {
-    const response = await fetch("http://127.0.0.1:5000/plan", {
+    const response = await fetch("https://ai-smart-travel-backend.onrender.com/plan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -25,7 +25,7 @@ function App() {
   };
 
   const submitFeedback = async () => {
-    await fetch("http://127.0.0.1:5000/feedback", {
+    await fetch("https://ai-smart-travel-backend.onrender.com/feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
