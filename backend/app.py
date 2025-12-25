@@ -15,16 +15,11 @@ except:
 
 app = Flask(__name__)
 
-# 🔥 FINAL CORS FIX (Render + Vercel safe)
-CORS(app)
-
-# Force CORS headers on ALL responses (including OPTIONS)
-@app.after_request
-def after_request(response):
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-    return response
+# ✅ CORRECT CORS CONFIG (NO credentials, NO wildcard conflict)
+CORS(
+    app,
+    resources={r"/*": {"origins": "*"}},
+)
 
 # Database configuration
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///travel.db"
@@ -39,40 +34,28 @@ with app.app_context():
 def home():
     return {"message": "AI Smart Travel Planner Backend Running 🚀"}
 
-# -------------------------------------------------
-# EXPLAINABLE AI LOGIC
-# -------------------------------------------------
+# ------------------ EXPLAINABILITY ------------------
 def generate_explanation(interests, confidence):
     if confidence == "baseline":
         return "Recommendation based on general travel popularity."
 
     reasons = []
-
     if "nature" in interests:
         reasons.append("you prefer nature-based trips")
-
     if "food" in interests:
         reasons.append("you enjoy food experiences")
 
     reasons.append("similar trips received positive feedback")
-
     return "Recommended because " + " and ".join(reasons) + "."
 
-# -------------------------------------------------
-# AUTO-RETRAIN CHECK
-# -------------------------------------------------
+# ------------------ AUTO RETRAIN ------------------
 def should_retrain_model(threshold=5):
     count = db.session.query(func.count(Feedback.id)).scalar()
     return count % threshold == 0
 
-# -------------------------------------------------
-# CREATE TRAVEL PLAN
-# -------------------------------------------------
-@app.route("/plan", methods=["POST", "OPTIONS"])
+# ------------------ PLAN ------------------
+@app.route("/plan", methods=["POST"])
 def create_plan():
-    if request.method == "OPTIONS":
-        return "", 200
-
     data = request.json
 
     trip = Trip(
@@ -80,23 +63,19 @@ def create_plan():
         budget=data.get("budget"),
         interests=",".join(data.get("interests", []))
     )
-
     db.session.add(trip)
     db.session.commit()
 
     confidence = "baseline"
-
     model_path = "ml/travel_model.pkl"
+
     if os.path.exists(model_path) and predict_score:
         try:
             confidence = predict_score(5)
         except:
             confidence = "baseline"
 
-    explanation = generate_explanation(
-        data.get("interests", []),
-        confidence
-    )
+    explanation = generate_explanation(data.get("interests", []), confidence)
 
     return jsonify({
         "trip_id": trip.id,
@@ -109,14 +88,9 @@ def create_plan():
         ]
     })
 
-# -------------------------------------------------
-# SAVE FEEDBACK + AUTO RETRAIN
-# -------------------------------------------------
-@app.route("/feedback", methods=["POST", "OPTIONS"])
+# ------------------ FEEDBACK ------------------
+@app.route("/feedback", methods=["POST"])
 def save_feedback():
-    if request.method == "OPTIONS":
-        return "", 200
-
     data = request.json
 
     feedback = Feedback(
@@ -130,13 +104,9 @@ def save_feedback():
     db.session.commit()
 
     retrain_status = "Waiting for more feedback"
-
     if should_retrain_model():
         try:
-            subprocess.run(
-                [sys.executable, "ml/train_model.py"],
-                check=True
-            )
+            subprocess.run([sys.executable, "ml/train_model.py"], check=True)
             retrain_status = "Model retrained successfully"
         except:
             retrain_status = "Model retraining failed"
@@ -147,4 +117,4 @@ def save_feedback():
     }
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run()
