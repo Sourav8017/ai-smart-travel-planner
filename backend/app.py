@@ -15,8 +15,16 @@ except:
 
 app = Flask(__name__)
 
-# ✅ FIXED CORS (ALLOW ALL ORIGINS – REQUIRED FOR VERCEL + RENDER)
-CORS(app, supports_credentials=True)
+# 🔥 FINAL CORS FIX (Render + Vercel safe)
+CORS(app)
+
+# Force CORS headers on ALL responses (including OPTIONS)
+@app.after_request
+def after_request(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    return response
 
 # Database configuration
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///travel.db"
@@ -24,7 +32,6 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db.init_app(app)
 
-# Create DB tables
 with app.app_context():
     db.create_all()
 
@@ -61,8 +68,11 @@ def should_retrain_model(threshold=5):
 # -------------------------------------------------
 # CREATE TRAVEL PLAN
 # -------------------------------------------------
-@app.route("/plan", methods=["POST"])
+@app.route("/plan", methods=["POST", "OPTIONS"])
 def create_plan():
+    if request.method == "OPTIONS":
+        return "", 200
+
     data = request.json
 
     trip = Trip(
@@ -102,8 +112,11 @@ def create_plan():
 # -------------------------------------------------
 # SAVE FEEDBACK + AUTO RETRAIN
 # -------------------------------------------------
-@app.route("/feedback", methods=["POST"])
+@app.route("/feedback", methods=["POST", "OPTIONS"])
 def save_feedback():
+    if request.method == "OPTIONS":
+        return "", 200
+
     data = request.json
 
     feedback = Feedback(
