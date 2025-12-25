@@ -14,7 +14,19 @@ except:
     predict_score = None
 
 app = Flask(__name__)
-CORS(app)
+CORS( app,
+    resources={
+        r"/*": {
+            "origins": [
+                "https://ai-smart-travel-planner.vercel.app"
+            ]
+        }
+    })
+@app.after_request
+def after_request(response):
+    response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
+    response.headers.add("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+    return response
 
 # Database configuration
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///travel.db"
