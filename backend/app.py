@@ -14,19 +14,9 @@ except:
     predict_score = None
 
 app = Flask(__name__)
-CORS( app,
-    resources={
-        r"/*": {
-            "origins": [
-                "https://ai-smart-travel-planner.vercel.app"
-            ]
-        }
-    })
-@app.after_request
-def after_request(response):
-    response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
-    response.headers.add("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
-    return response
+
+# ✅ FIXED CORS (ALLOW ALL ORIGINS – REQUIRED FOR VERCEL + RENDER)
+CORS(app, supports_credentials=True)
 
 # Database configuration
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///travel.db"
@@ -34,7 +24,7 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db.init_app(app)
 
-# Create tables
+# Create DB tables
 with app.app_context():
     db.create_all()
 
@@ -75,7 +65,6 @@ def should_retrain_model(threshold=5):
 def create_plan():
     data = request.json
 
-    # Save trip request
     trip = Trip(
         destination=data.get("destination"),
         budget=data.get("budget"),
@@ -85,10 +74,8 @@ def create_plan():
     db.session.add(trip)
     db.session.commit()
 
-    # Default confidence
     confidence = "baseline"
 
-    # Use ML model only if trained
     model_path = "ml/travel_model.pkl"
     if os.path.exists(model_path) and predict_score:
         try:
