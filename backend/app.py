@@ -11,8 +11,12 @@ CORS(app)
 DB_NAME = "travel.db"
 
 
+def get_db():
+    return sqlite3.connect(DB_NAME)
+
+
 def init_db():
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS feedback (
@@ -32,6 +36,32 @@ def init_db():
 
 
 init_db()
+
+
+def calculate_confidence(destination, travel_type):
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT feedback, COUNT(*) 
+        FROM feedback
+        WHERE destination = ? AND travel_type = ?
+        GROUP BY feedback
+    """, (destination, travel_type))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    stats = {"positive": 0, "negative": 0}
+    for feedback, count in rows:
+        stats[feedback] = count
+
+    if stats["positive"] > stats["negative"]:
+        return "high"
+    elif stats["positive"] == stats["negative"] and stats["positive"] != 0:
+        return "medium"
+    else:
+        return "baseline"
 
 
 @app.route("/", methods=["GET"])
@@ -59,9 +89,12 @@ def generate_plan():
         f"Discover food, culture, and attractions in {destination}."
     ]
 
+    plan = random.choice(plans)
+    confidence = calculate_confidence(destination, travel_type)
+
     return jsonify({
-        "plan": random.choice(plans),
-        "confidence": random.choice(["baseline", "medium", "high"])
+        "plan": plan,
+        "confidence": confidence
     })
 
 
@@ -69,7 +102,7 @@ def generate_plan():
 def submit_feedback():
     data = request.get_json()
 
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_db()
     cursor = conn.cursor()
 
     cursor.execute("""
