@@ -11,6 +11,9 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [feedbackSent, setFeedbackSent] = useState(false);
 
+  const BACKEND_URL =
+    "https://ai-smart-travel-planner-backend.onrender.com";
+
   const generatePlan = async () => {
     setLoading(true);
     setPlan("");
@@ -18,7 +21,7 @@ function App() {
     setFeedbackSent(false);
 
     try {
-      const response = await fetch("http://127.0.0.1:5000/generate-plan", {
+      const response = await fetch(`${BACKEND_URL}/generate-plan`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -42,7 +45,7 @@ function App() {
   };
 
   const sendFeedback = async (value) => {
-    await fetch("http://127.0.0.1:5000/feedback", {
+    await fetch(`${BACKEND_URL}/feedback`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -86,7 +89,10 @@ function App() {
         onChange={(e) => setDays(e.target.value)}
       />
 
-      <select value={travelType} onChange={(e) => setTravelType(e.target.value)}>
+      <select
+        value={travelType}
+        onChange={(e) => setTravelType(e.target.value)}
+      >
         <option value="">Select Travel Type</option>
         <option value="adventure">Adventure</option>
         <option value="leisure">Leisure</option>
@@ -101,7 +107,9 @@ function App() {
         <div className="result">
           <h3>Your Travel Plan</h3>
           <p>{plan}</p>
-          <p><strong>Confidence:</strong> {confidence}</p>
+          <p>
+            <strong>Confidence:</strong> {confidence}
+          </p>
 
           {!feedbackSent ? (
             <div>
