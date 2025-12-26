@@ -2,6 +2,7 @@ import sqlite3
 import pandas as pd
 import joblib
 import os
+import sys
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
@@ -16,41 +17,47 @@ MODEL_PATH = "backend/ml/travel_model.pkl"
 print("🔄 Starting model retraining...")
 
 # =====================================================
-# CONNECT DB
+# CHECK DB FILE
 # =====================================================
 if not os.path.exists(DB_PATH):
-    print("⚠️ Database not found. Skipping retraining.")
-    exit(0)
+    print("⚠️ Database file not found. Skipping retraining.")
+    sys.exit(0)
 
-conn = sqlite3.connect(DB_PATH)
+try:
+    conn = sqlite3.connect(DB_PATH)
 
-query = """
-SELECT
-    f.rating,
-    t.budget,
-    t.days,
-    t.travel_type,
-    COALESCE(AVG(f2.liked), 0.5) AS destination_like_rate,
-    0 AS comment_sentiment,
-    f.liked
-FROM feedback f
-JOIN trip t ON f.trip_id = t.id
-LEFT JOIN feedback f2 ON f2.trip_id = t.id
-WHERE f.rating IS NOT NULL
-AND f.liked IS NOT NULL
-"""
+    query = """
+    SELECT
+        f.rating,
+        t.budget,
+        t.days,
+        t.travel_type,
+        COALESCE(AVG(f2.liked), 0.5) AS destination_like_rate,
+        0 AS comment_sentiment,
+        f.liked
+    FROM feedback f
+    JOIN trip t ON f.trip_id = t.id
+    LEFT JOIN feedback f2 ON f2.trip_id = t.id
+    WHERE f.rating IS NOT NULL
+    AND f.liked IS NOT NULL
+    """
 
-df = pd.read_sql_query(query, conn)
-conn.close()
+    df = pd.read_sql_query(query, conn)
+    conn.close()
+
+except Exception as e:
+    print("⚠️ Error reading training data. Skipping retraining.")
+    print("Reason:", e)
+    sys.exit(0)
 
 # =====================================================
-# CHECK DATA AVAILABILITY
+# CHECK DATA SIZE
 # =====================================================
-if df.empty or df.shape[0] < 5:
+if df.empty or len(df) < 5:
     print("⚠️ Not enough feedback data to retrain. Skipping.")
-    exit(0)
+    sys.exit(0)
 
-print(f"✅ Training on {df.shape[0]} feedback records")
+print(f"✅ Training on {len(df)} records")
 
 # =====================================================
 # PREPARE DATA
@@ -58,7 +65,13 @@ print(f"✅ Training on {df.shape[0]} feedback records")
 X = df.drop("liked", axis=1)
 y = df["liked"]
 
-num_features = ["rating", "budget", "days", "destination_like_rate", "comment_sentiment"]
+num_features = [
+    "rating",
+    "budget",
+    "days",
+    "destination_like_rate",
+    "comment_sentiment"
+]
 cat_features = ["travel_type"]
 
 preprocessor = ColumnTransformer(
