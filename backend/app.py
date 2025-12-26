@@ -1,36 +1,54 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import sqlite3
-import random
-from datetime import datetime
 import os
+import random
+import joblib
+import pandas as pd
 
 app = Flask(__name__)
 CORS(app)
 
-DB_NAME = "travel.db"
+DB_PATH = "instance/travel.db"
+MODEL_PATH = "ml/model.pkl"
+
+model = None
+if os.path.exists(MODEL_PATH):
+    model = joblib.load(MODEL_PATH)
+    print("✅ ML model loaded")
+else:
+    print("⚠️ ML model not found, using baseline confidence")
 
 
-def get_db():
-    return sqlite3.connect(DB_NAME)
+def get_conn():
+    os.makedirs("instance", exist_ok=True)
+    return sqlite3.connect(DB_PATH)
 
 
 def init_db():
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS feedback (
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS trip (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             destination TEXT,
             budget INTEGER,
             days INTEGER,
-            travel_type TEXT,
-            plan TEXT,
-            confidence TEXT,
-            feedback TEXT,
-            created_at TEXT
+            travel_type TEXT
         )
     """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trip_id INTEGER,
+            rating INTEGER,
+            liked INTEGER,
+            comment TEXT
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -38,94 +56,84 @@ def init_db():
 init_db()
 
 
-def calculate_confidence(destination, travel_type):
-    conn = get_db()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        SELECT feedback, COUNT(*) 
-        FROM feedback
-        WHERE destination = ? AND travel_type = ?
-        GROUP BY feedback
-    """, (destination, travel_type))
-
-    rows = cursor.fetchall()
-    conn.close()
-
-    stats = {"positive": 0, "negative": 0}
-    for feedback, count in rows:
-        stats[feedback] = count
-
-    if stats["positive"] > stats["negative"]:
-        return "high"
-    elif stats["positive"] == stats["negative"] and stats["positive"] != 0:
-        return "medium"
-    else:
-        return "baseline"
-
-
 @app.route("/", methods=["GET"])
 def home():
-    return jsonify({"message": "AI Smart Travel Planner backend running"}), 200
-
-
-@app.route("/health", methods=["GET"])
-def health():
-    return jsonify({"status": "OK"}), 200
+    return jsonify({"status": "OK", "message": "Backend running"})
 
 
 @app.route("/generate-plan", methods=["POST"])
 def generate_plan():
     data = request.get_json()
 
-    destination = data.get("destination")
-    budget = data.get("budget")
-    days = data.get("days")
-    travel_type = data.get("travel_type")
+    destination = data["destination"]
+    budget = int(data["budget"])
+    days = int(data["days"])
+    travel_type = data["travel_type"]
+
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO trip (destination, budget, days, travel_type)
+        VALUES (?, ?, ?, ?)
+    """, (destination, budget, days, travel_type))
+
+    trip_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+
+    confidence = "baseline"
+
+    if model:
+        sample_df = pd.DataFrame([{
+            "rating": 3,
+            "budget": budget,
+            "days": days,
+            "travel_type": travel_type
+        }])
+
+        prob = model.predict_proba(sample_df)[0][1]
+
+        if prob > 0.7:
+            confidence = "high"
+        elif prob > 0.4:
+            confidence = "medium"
 
     plans = [
-        f"Explore {destination} with a {travel_type} focused itinerary.",
-        f"Enjoy a {days}-day trip to {destination} within a budget of {budget}.",
-        f"Discover food, culture, and attractions in {destination}."
+        f"Explore {destination} with a {travel_type} plan",
+        f"{days}-day {travel_type} trip to {destination} under budget {budget}",
+        f"Discover food and culture in {destination}"
     ]
 
-    plan = random.choice(plans)
-    confidence = calculate_confidence(destination, travel_type)
-
     return jsonify({
-        "plan": plan,
+        "trip_id": trip_id,
+        "plan": random.choice(plans),
         "confidence": confidence
     })
 
 
 @app.route("/feedback", methods=["POST"])
-def submit_feedback():
+def feedback():
     data = request.get_json()
 
-    conn = get_db()
-    cursor = conn.cursor()
+    conn = get_conn()
+    cur = conn.cursor()
 
-    cursor.execute("""
-        INSERT INTO feedback 
-        (destination, budget, days, travel_type, plan, confidence, feedback, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    cur.execute("""
+        INSERT INTO feedback (trip_id, rating, liked, comment)
+        VALUES (?, ?, ?, ?)
     """, (
-        data.get("destination"),
-        data.get("budget"),
-        data.get("days"),
-        data.get("travel_type"),
-        data.get("plan"),
-        data.get("confidence"),
-        data.get("feedback"),
-        datetime.now().isoformat()
+        data["trip_id"],
+        data["rating"],
+        data["liked"],
+        data.get("comment", "")
     ))
 
     conn.commit()
     conn.close()
 
-    return jsonify({"message": "Feedback saved"}), 200
+    return jsonify({"message": "Feedback saved"})
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="127.0.0.1", port=5000, debug=True)

@@ -1,51 +1,28 @@
 import React, { useState } from "react";
 import "./App.css";
 
+const BACKEND_URL = "http://127.0.0.1:5000";
+
 function App() {
   const [destination, setDestination] = useState("");
   const [budget, setBudget] = useState("");
   const [days, setDays] = useState("");
   const [travelType, setTravelType] = useState("");
+
   const [plan, setPlan] = useState("");
   const [confidence, setConfidence] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [tripId, setTripId] = useState(null);
+
+  const [rating, setRating] = useState(3);
+  const [comment, setComment] = useState("");
   const [feedbackSent, setFeedbackSent] = useState(false);
 
-  const BACKEND_URL =
-    "https://ai-smart-travel-planner-backend.onrender.com";
-
   const generatePlan = async () => {
-    setLoading(true);
     setPlan("");
     setConfidence("");
     setFeedbackSent(false);
 
-    try {
-      const response = await fetch(`${BACKEND_URL}/generate-plan`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          destination,
-          budget,
-          days,
-          travel_type: travelType,
-        }),
-      });
-
-      const data = await response.json();
-      setPlan(data.plan);
-      setConfidence(data.confidence);
-    } catch (error) {
-      alert("Backend not reachable");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const sendFeedback = async (value) => {
-    await fetch(`${BACKEND_URL}/feedback`, {
+    const response = await fetch(`${BACKEND_URL}/generate-plan`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -55,9 +32,26 @@ function App() {
         budget,
         days,
         travel_type: travelType,
-        plan,
-        confidence,
-        feedback: value,
+      }),
+    });
+
+    const data = await response.json();
+    setPlan(data.plan);
+    setConfidence(data.confidence);
+    setTripId(data.trip_id);
+  };
+
+  const sendFeedback = async (likedValue) => {
+    await fetch(`${BACKEND_URL}/feedback`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        trip_id: tripId,
+        rating: rating,
+        liked: likedValue,
+        comment: comment,
       }),
     });
 
@@ -69,7 +63,6 @@ function App() {
       <h1>AI Smart Travel Planner 🌍</h1>
 
       <input
-        type="text"
         placeholder="Destination"
         value={destination}
         onChange={(e) => setDestination(e.target.value)}
@@ -89,34 +82,44 @@ function App() {
         onChange={(e) => setDays(e.target.value)}
       />
 
-      <select
-        value={travelType}
-        onChange={(e) => setTravelType(e.target.value)}
-      >
+      <select value={travelType} onChange={(e) => setTravelType(e.target.value)}>
         <option value="">Select Travel Type</option>
-        <option value="adventure">Adventure</option>
         <option value="leisure">Leisure</option>
+        <option value="adventure">Adventure</option>
         <option value="family">Family</option>
       </select>
 
-      <button onClick={generatePlan} disabled={loading}>
-        {loading ? "Generating..." : "Generate Plan"}
-      </button>
+      <button onClick={generatePlan}>Generate Plan</button>
 
       {plan && (
         <div className="result">
-          <h3>Your Travel Plan</h3>
+          <h3>Your Plan</h3>
           <p>{plan}</p>
-          <p>
-            <strong>Confidence:</strong> {confidence}
-          </p>
+          <p><strong>Confidence:</strong> {confidence}</p>
 
           {!feedbackSent ? (
-            <div>
-              <p>Was this helpful?</p>
-              <button onClick={() => sendFeedback("positive")}>👍 Yes</button>
-              <button onClick={() => sendFeedback("negative")}>👎 No</button>
-            </div>
+            <>
+              <h4>Rate this plan (1–5)</h4>
+              <input
+                type="range"
+                min="1"
+                max="5"
+                value={rating}
+                onChange={(e) => setRating(Number(e.target.value))}
+              />
+              <p>Rating: {rating}</p>
+
+              <textarea
+                placeholder="Optional comment"
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+              />
+
+              <div>
+                <button onClick={() => sendFeedback(1)}>👍 Like</button>
+                <button onClick={() => sendFeedback(0)}>👎 Dislike</button>
+              </div>
+            </>
           ) : (
             <p>✅ Feedback submitted. Thank you!</p>
           )}
