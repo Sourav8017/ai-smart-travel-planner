@@ -1,113 +1,110 @@
+import os
 import sqlite3
 import pandas as pd
 import joblib
-import os
-import sys
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, classification_report
 
-DB_PATH = "backend/instance/travel.db"
-MODEL_PATH = "backend/ml/travel_model.pkl"
+# -----------------------------------------------------
+# PATHS (ROBUST — WORKS EVERYWHERE)
+# -----------------------------------------------------
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DB_PATH = os.path.join(BASE_DIR, "instance", "travel.db")
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "travel_model.pkl")
 
 print("🔄 Starting model retraining...")
 
-# =====================================================
-# CHECK DB FILE
-# =====================================================
+# -----------------------------------------------------
+# CHECK DATABASE
+# -----------------------------------------------------
 if not os.path.exists(DB_PATH):
     print("⚠️ Database file not found. Skipping retraining.")
-    sys.exit(0)
+    exit(0)
 
-try:
-    conn = sqlite3.connect(DB_PATH)
+conn = sqlite3.connect(DB_PATH)
 
-    query = """
-    SELECT
-        f.rating,
-        t.budget,
-        t.days,
-        t.travel_type,
-        COALESCE(AVG(f2.liked), 0.5) AS destination_like_rate,
-        0 AS comment_sentiment,
-        f.liked
-    FROM feedback f
-    JOIN trip t ON f.trip_id = t.id
-    LEFT JOIN feedback f2 ON f2.trip_id = t.id
-    WHERE f.rating IS NOT NULL
+# -----------------------------------------------------
+# LOAD TRAINING DATA (JOIN trip + feedback)
+# -----------------------------------------------------
+query = """
+SELECT
+    f.rating,
+    t.budget,
+    t.days,
+    t.travel_type,
+    f.liked
+FROM feedback f
+JOIN trip t ON f.trip_id = t.id
+WHERE
+    f.rating IS NOT NULL
+    AND t.budget IS NOT NULL
+    AND t.days IS NOT NULL
+    AND t.travel_type IS NOT NULL
     AND f.liked IS NOT NULL
-    """
+"""
 
-    df = pd.read_sql_query(query, conn)
-    conn.close()
+df = pd.read_sql_query(query, conn)
+conn.close()
 
-except Exception as e:
-    print("⚠️ Error reading training data. Skipping retraining.")
-    print("Reason:", e)
-    sys.exit(0)
-
-# =====================================================
-# CHECK DATA SIZE
-# =====================================================
 if df.empty or len(df) < 5:
     print("⚠️ Not enough feedback data to retrain. Skipping.")
-    sys.exit(0)
+    exit(0)
 
-print(f"✅ Training on {len(df)} records")
+print(f"📊 Training on {len(df)} feedback records")
 
-# =====================================================
-# PREPARE DATA
-# =====================================================
-X = df.drop("liked", axis=1)
+# -----------------------------------------------------
+# FEATURES / LABEL
+# -----------------------------------------------------
+X = df[["rating", "budget", "days", "travel_type"]]
 y = df["liked"]
 
-num_features = [
-    "rating",
-    "budget",
-    "days",
-    "destination_like_rate",
-    "comment_sentiment"
-]
-cat_features = ["travel_type"]
+# -----------------------------------------------------
+# PREPROCESSING
+# -----------------------------------------------------
+numeric_features = ["rating", "budget", "days"]
+categorical_features = ["travel_type"]
 
 preprocessor = ColumnTransformer(
     transformers=[
-        ("num", StandardScaler(), num_features),
-        ("cat", OneHotEncoder(handle_unknown="ignore"), cat_features)
+        ("num", StandardScaler(), numeric_features),
+        ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_features),
     ]
 )
 
+# -----------------------------------------------------
+# MODEL
+# -----------------------------------------------------
 model = RandomForestClassifier(
     n_estimators=200,
-    max_depth=8,
-    random_state=42
+    max_depth=10,
+    random_state=42,
+    class_weight="balanced"
 )
 
-pipeline = Pipeline([
-    ("preprocessor", preprocessor),
-    ("model", model)
-])
+pipeline = Pipeline(
+    steps=[
+        ("preprocessor", preprocessor),
+        ("model", model),
+    ]
+)
 
-# =====================================================
+# -----------------------------------------------------
 # TRAIN
-# =====================================================
+# -----------------------------------------------------
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42
 )
 
 pipeline.fit(X_train, y_train)
 
-y_pred = pipeline.predict(X_test)
-
-print("📊 Accuracy:", accuracy_score(y_test, y_pred))
-print(classification_report(y_test, y_pred))
-
-# =====================================================
+# -----------------------------------------------------
 # SAVE MODEL
-# =====================================================
+# -----------------------------------------------------
 joblib.dump(pipeline, MODEL_PATH)
-print("💾 Model retrained and saved successfully")
+
+print("✅ Model retrained and saved successfully")
+print(f"📦 Model path: {MODEL_PATH}")
