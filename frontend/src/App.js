@@ -1,122 +1,117 @@
-import { useState } from "react";
+import React, { useState } from "react";
+import "./App.css";
 
 function App() {
   const [destination, setDestination] = useState("");
   const [budget, setBudget] = useState("");
-  const [plan, setPlan] = useState(null);
+  const [days, setDays] = useState("");
+  const [travelType, setTravelType] = useState("");
+  const [plan, setPlan] = useState("");
+  const [confidence, setConfidence] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [feedbackSent, setFeedbackSent] = useState(false);
 
-  const [rating, setRating] = useState(5);
-  const [liked, setLiked] = useState(true);
-  const [comment, setComment] = useState("");
+  const generatePlan = async () => {
+    setLoading(true);
+    setPlan("");
+    setConfidence("");
+    setFeedbackSent(false);
 
-  const getPlan = async () => {
-    const response = await fetch("https://ai-smart-travel-backend.onrender.com/plan", {
+    try {
+      const response = await fetch("http://127.0.0.1:5000/generate-plan", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          destination,
+          budget,
+          days,
+          travel_type: travelType,
+        }),
+      });
+
+      const data = await response.json();
+      setPlan(data.plan);
+      setConfidence(data.confidence);
+    } catch (error) {
+      alert("Backend not reachable");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const sendFeedback = async (value) => {
+    await fetch("http://127.0.0.1:5000/feedback", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
         destination,
         budget,
-        interests: ["nature", "food"]
-      })
+        days,
+        travel_type: travelType,
+        plan,
+        confidence,
+        feedback: value,
+      }),
     });
 
-    const data = await response.json();
-    setPlan(data);
-  };
-
-  const submitFeedback = async () => {
-    await fetch("https://ai-smart-travel-backend.onrender.com/feedback", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        trip_id: plan.trip_id,
-        rating,
-        liked,
-        comment
-      })
-    });
-
-    alert("Feedback submitted successfully ✅");
+    setFeedbackSent(true);
   };
 
   return (
-    <div style={{ padding: "40px", maxWidth: "600px", fontFamily: "Arial" }}>
+    <div className="App">
       <h1>AI Smart Travel Planner 🌍</h1>
 
       <input
+        type="text"
         placeholder="Destination"
         value={destination}
         onChange={(e) => setDestination(e.target.value)}
-        style={{ width: "100%", padding: "8px" }}
       />
-      <br /><br />
 
       <input
+        type="number"
         placeholder="Budget"
         value={budget}
         onChange={(e) => setBudget(e.target.value)}
-        style={{ width: "100%", padding: "8px" }}
       />
-      <br /><br />
 
-      <button onClick={getPlan} style={{ padding: "10px 20px" }}>
-        Generate Plan
+      <input
+        type="number"
+        placeholder="Days"
+        value={days}
+        onChange={(e) => setDays(e.target.value)}
+      />
+
+      <select value={travelType} onChange={(e) => setTravelType(e.target.value)}>
+        <option value="">Select Travel Type</option>
+        <option value="adventure">Adventure</option>
+        <option value="leisure">Leisure</option>
+        <option value="family">Family</option>
+      </select>
+
+      <button onClick={generatePlan} disabled={loading}>
+        {loading ? "Generating..." : "Generate Plan"}
       </button>
 
       {plan && (
-        <div style={{ marginTop: "30px" }}>
-          <h3>Trip Itinerary</h3>
+        <div className="result">
+          <h3>Your Travel Plan</h3>
+          <p>{plan}</p>
+          <p><strong>Confidence:</strong> {confidence}</p>
 
-          <p>
-            <strong>Recommendation Confidence:</strong>{" "}
-            {plan.confidence}
-          </p>
-
-          <p style={{ color: "#555" }}>
-            <em>{plan.explanation}</em>
-          </p>
-
-          <ul>
-            {plan.itinerary.map((day, index) => (
-              <li key={index}>{day}</li>
-            ))}
-          </ul>
-
-          <hr />
-
-          <h3>Give Feedback</h3>
-
-          <label>Rating (1–5)</label><br />
-          <input
-            type="number"
-            min="1"
-            max="5"
-            value={rating}
-            onChange={(e) => setRating(e.target.value)}
-          />
-          <br /><br />
-
-          <label>
-            <input
-              type="checkbox"
-              checked={liked}
-              onChange={() => setLiked(!liked)}
-            />{" "}
-            I liked this plan
-          </label>
-          <br /><br />
-
-          <textarea
-            placeholder="Your feedback"
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            style={{ width: "100%", padding: "8px" }}
-          />
-          <br /><br />
-
-          <button onClick={submitFeedback}>
-            Submit Feedback
-          </button>
+          {!feedbackSent ? (
+            <div>
+              <p>Was this helpful?</p>
+              <button onClick={() => sendFeedback("positive")}>👍 Yes</button>
+              <button onClick={() => sendFeedback("negative")}>👎 No</button>
+            </div>
+          ) : (
+            <p>✅ Feedback submitted. Thank you!</p>
+          )}
         </div>
       )}
     </div>

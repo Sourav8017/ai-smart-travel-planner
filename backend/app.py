@@ -1,120 +1,98 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from database import db
-from models import Trip, Feedback
-from sqlalchemy import func
+import sqlite3
+import random
+from datetime import datetime
 import os
-import subprocess
-import sys
-
-# Safe ML import
-try:
-    from ml.predict import predict_score
-except:
-    predict_score = None
 
 app = Flask(__name__)
+CORS(app)
 
-# ✅ CORRECT CORS CONFIG (NO credentials, NO wildcard conflict)
-CORS(
-    app,
-    resources={r"/*": {"origins": "*"}},
-)
+DB_NAME = "travel.db"
 
-# Database configuration
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///travel.db"
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-db.init_app(app)
+def init_db():
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            destination TEXT,
+            budget INTEGER,
+            days INTEGER,
+            travel_type TEXT,
+            plan TEXT,
+            confidence TEXT,
+            feedback TEXT,
+            created_at TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
 
-with app.app_context():
-    db.create_all()
 
-@app.route("/")
+init_db()
+
+
+@app.route("/", methods=["GET"])
 def home():
-    return {"message": "AI Smart Travel Planner Backend Running 🚀"}
+    return jsonify({"message": "AI Smart Travel Planner backend running"}), 200
 
-# ------------------ EXPLAINABILITY ------------------
-def generate_explanation(interests, confidence):
-    if confidence == "baseline":
-        return "Recommendation based on general travel popularity."
 
-    reasons = []
-    if "nature" in interests:
-        reasons.append("you prefer nature-based trips")
-    if "food" in interests:
-        reasons.append("you enjoy food experiences")
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "OK"}), 200
 
-    reasons.append("similar trips received positive feedback")
-    return "Recommended because " + " and ".join(reasons) + "."
 
-# ------------------ AUTO RETRAIN ------------------
-def should_retrain_model(threshold=5):
-    count = db.session.query(func.count(Feedback.id)).scalar()
-    return count % threshold == 0
+@app.route("/generate-plan", methods=["POST"])
+def generate_plan():
+    data = request.get_json()
 
-# ------------------ PLAN ------------------
-@app.route("/plan", methods=["POST"])
-def create_plan():
-    data = request.json
+    destination = data.get("destination")
+    budget = data.get("budget")
+    days = data.get("days")
+    travel_type = data.get("travel_type")
 
-    trip = Trip(
-        destination=data.get("destination"),
-        budget=data.get("budget"),
-        interests=",".join(data.get("interests", []))
-    )
-    db.session.add(trip)
-    db.session.commit()
-
-    confidence = "baseline"
-    model_path = "ml/travel_model.pkl"
-
-    if os.path.exists(model_path) and predict_score:
-        try:
-            confidence = predict_score(5)
-        except:
-            confidence = "baseline"
-
-    explanation = generate_explanation(data.get("interests", []), confidence)
+    plans = [
+        f"Explore {destination} with a {travel_type} focused itinerary.",
+        f"Enjoy a {days}-day trip to {destination} within a budget of {budget}.",
+        f"Discover food, culture, and attractions in {destination}."
+    ]
 
     return jsonify({
-        "trip_id": trip.id,
-        "confidence": confidence,
-        "explanation": explanation,
-        "itinerary": [
-            "Day 1: Local sightseeing",
-            "Day 2: Explore popular attractions",
-            "Day 3: Relax and return"
-        ]
+        "plan": random.choice(plans),
+        "confidence": random.choice(["baseline", "medium", "high"])
     })
 
-# ------------------ FEEDBACK ------------------
+
 @app.route("/feedback", methods=["POST"])
-def save_feedback():
-    data = request.json
+def submit_feedback():
+    data = request.get_json()
 
-    feedback = Feedback(
-        trip_id=data.get("trip_id"),
-        rating=int(data.get("rating")),
-        liked=bool(data.get("liked")),
-        comment=data.get("comment")
-    )
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
 
-    db.session.add(feedback)
-    db.session.commit()
+    cursor.execute("""
+        INSERT INTO feedback 
+        (destination, budget, days, travel_type, plan, confidence, feedback, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        data.get("destination"),
+        data.get("budget"),
+        data.get("days"),
+        data.get("travel_type"),
+        data.get("plan"),
+        data.get("confidence"),
+        data.get("feedback"),
+        datetime.now().isoformat()
+    ))
 
-    retrain_status = "Waiting for more feedback"
-    if should_retrain_model():
-        try:
-            subprocess.run([sys.executable, "ml/train_model.py"], check=True)
-            retrain_status = "Model retrained successfully"
-        except:
-            retrain_status = "Model retraining failed"
+    conn.commit()
+    conn.close()
 
-    return {
-        "message": "Feedback saved successfully ✅",
-        "retrain_status": retrain_status
-    }
+    return jsonify({"message": "Feedback saved"}), 200
+
 
 if __name__ == "__main__":
-    app.run()
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
